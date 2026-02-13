@@ -3,10 +3,12 @@
 #include "handler.h"
 
 #include <stdio.h>
-#include <unistd.h>
-#include <sys/wait.h>
 #include <ctype.h>
+#include <stdlib.h>
+#include <sys/syslimits.h>
+#include <unistd.h>
 #include <string.h>
+#include <sys/wait.h>
 
 #ifdef __APPLE__
   #define OPEN_CMD "open"
@@ -14,12 +16,15 @@
   #define OPEN_CMD "xdg-open"
 #endif
 
+#define MAX_ALIAS_LEN 128
+
 static int add_document (const char* type, const char* alias, const char* location);
 static int list_documents (void);
-static int open_document (const char* name);
+static void open_document (const char* name);
 
 // Helper functions
-int valid_entries(const char* alias, const char* type, const char* location);
+static int valid_entries(const char* alias, const char* type, const char* location);
+static int get_file_location(char* file_location_buffer, const char* alias);
 
 void handle_command(const Commands command, int argc, const char* argv[]) {
 
@@ -44,6 +49,11 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
     }
 
     case CMD_OPEN: {
+      if (argc != 3) {
+        fprintf(stderr, "Usage: ./qrd -o <alias>.\n");
+        break;
+      }
+
       open_document(argv[2]);
       break;
     }
@@ -83,29 +93,32 @@ static int add_document (const char* type, const char* alias, const char* locati
   return 1;
 }
 
-static int open_document(const char* name) {
+static void open_document(const char* alias) {
+ 
+  char location_buffer[PATH_MAX];
+  if (!get_file_location(location_buffer, alias)) {
+    return;
+  } 
 
   int status = 0;
   pid_t pid = fork();
 
   if (pid == 0) {
-
-    char* exe_command[] = {OPEN_CMD, (char*)name, NULL};
+    char* exe_command[] = {OPEN_CMD, location_buffer, NULL};
     execvp(OPEN_CMD, exe_command);
   } else {
     wait(&status);
 
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-      fprintf(stderr, "Can't open %s.\n", name);
-    } else {
-      printf("open\n");
-    }
+      fprintf(stderr, "Can't open %s.\n", alias);
+      return;
+    } 
   }
 
-  return 0;
+  fprintf(stdout, "Opened: %s\n", alias);
 }
 
-int valid_entries(const char* alias, const char* type, const char* location) {
+static int valid_entries(const char* alias, const char* type, const char* location) {
 
   const char* illegal = ":;";
 
@@ -115,4 +128,51 @@ int valid_entries(const char* alias, const char* type, const char* location) {
   }
 
   return 1;
+}
+
+static void copy_buffer(char* des, char* src, char delimiter) {
+  size_t i = 0;
+  while (src[i] != delimiter) {
+    des[i] = src[i];
+    i++;
+  }
+  des[i] = '\0';
+}
+
+static int get_file_location(char* file_location_out, const char* target_alias) {
+  const char* registry_path = get_registry_path();
+  FILE* fp = fopen(registry_path, "r");
+  if (!fp) return 0;
+
+  char* line = NULL;
+  size_t line_limit = 0;
+
+  while (getline(&line, &line_limit, fp) != -1) {
+    // Find 1st colon
+    char* p = strchr(line, ':');
+    if (!p) continue;
+
+    char current_alias[128]; 
+    p++; 
+    copy_buffer(current_alias, p, ':');
+
+    if (strcmp(current_alias, target_alias) == 0) {
+      // Find 2nd colon (search starting from the alias)
+      p = strchr(p, ':');
+      if (p) {
+        p++; 
+        copy_buffer(file_location_out, p, ';');
+
+        free(line);
+        fclose(fp);
+        return 1;
+      }
+    }
+  }
+
+  fprintf(stderr, "No %s found.\n", target_alias);
+
+  free(line);
+  fclose(fp);
+  return 0;
 }
