@@ -16,7 +16,7 @@
   #define OPEN_CMD "xdg-open"
 #endif
 
-#define MAX_ALIAS_LEN 128
+#define MAX_LEN 128
 
 static int add_document (const char* type, const char* alias, const char* location);
 static int list_documents (void);
@@ -120,6 +120,15 @@ static void open_document(const char* alias) {
 
 static int valid_entries(const char* alias, const char* type, const char* location) {
 
+  if (strlen(alias) > MAX_LEN) {
+    fprintf(stderr, "Alias cannot be more than 128 characters.\n");
+    return 0;
+  }
+
+  if (strlen(type) > MAX_LEN) {
+    fprintf(stderr, "Type cannot be more than 128 characters.\n");
+    return 0;
+  }
   const char* illegal = ":;";
 
   if (strpbrk(alias, illegal) || strpbrk(type, illegal) || strpbrk(location, illegal)) {
