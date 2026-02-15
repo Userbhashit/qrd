@@ -5,21 +5,25 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
-#include <sys/syslimits.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
 
-#ifdef __APPLE__
+#if defined(__APPLE__)
+  #include <sys/syslimits.h>
   #define OPEN_CMD "open"
-#else
+#elif defined(__linux__)
+  #include <limits.h>
+  #include <linux/limits.h>
   #define OPEN_CMD "xdg-open"
+#else 
+  #error "This application is only supported for linux and macOS."
 #endif
 
 #define MAX_LEN 128
 
 static int add_document (const char* type, const char* alias, const char* location);
-static int list_documents (void);
+static void list_documents (const char* type);
 static void open_document (const char* name);
 
 // Helper functions
@@ -56,6 +60,14 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
 
       open_document(argv[2]);
       break;
+    }
+
+    case CMD_LIST: {
+      if (argc == 2) {
+        list_documents(NULL);
+      } else {
+        list_documents(argv[2]);
+      }
     }
 
     default:
@@ -161,7 +173,7 @@ static int get_file_location(char* file_location_out, const char* target_alias) 
     char* p = strchr(line, ':');
     if (!p) continue;
 
-    char current_alias[128]; 
+    char current_alias[MAX_LEN]; 
     p++; 
     copy_buffer(current_alias, p, ':');
 
@@ -184,4 +196,57 @@ static int get_file_location(char* file_location_out, const char* target_alias) 
   free(line);
   fclose(fp);
   return 0;
+}
+
+static void list_all_documents(void);
+static void list_documents_of(const char* type);
+
+static void list_documents (const char* type) {
+  if (!type) {
+    list_all_documents();
+  } else {
+    list_documents_of(type);
+  }
+}
+
+static void list_all_documents(void) {
+  const char* registry_path = get_registry_path();
+  FILE* fp = fopen(registry_path, "r");
+  if (!fp) {
+    fprintf(stderr, "Unable to open registry file.\n");
+    return;
+  }
+
+  printf("     Type                  ALias                   Location                        \n");
+  printf("-----------------------------------------------------------------------------------\n");
+  char* line = NULL;
+  size_t line_limit = 0;
+
+  while (getline(&line, &line_limit, fp) != -1) {
+    char type[MAX_LEN];
+    char alias[MAX_LEN];
+    char location[PATH_MAX];
+
+    char* delimiter = ":;";
+    if (!strpbrk(line, delimiter)) {
+      continue;
+    }
+    copy_buffer(type, line, ':');
+
+    char* p = strchr(line, ':');
+    p++;
+    copy_buffer(alias, p, ':');
+
+    p = strchr(p, ':');
+    copy_buffer(location, ++p, ';');
+
+    printf("     %s                  %s                  %s\n", type, alias, location);
+  }
+
+  free(line);
+  fclose(fp);
+}
+
+static void list_documents_of(const char* type) {
+
 }
