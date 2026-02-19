@@ -29,6 +29,7 @@ static void open_document (const char* name);
 static int valid_entries(const char* alias, const char* type, const char* location);
 static int get_file_location(char* file_location_buffer, const char* alias);
 static void list_documents(const char* filter_type);
+static void delete_document(const char* alias_to_delete);
 
 void handle_command(const Commands command, int argc, const char* argv[]) {
 
@@ -68,6 +69,16 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
       } else {
         list_documents(argv[2]);
       }
+      break;
+    }
+
+    case CMD_REMOVE: {
+      if (argc != 3) {
+        fprintf(stderr, "Usage: ./qrd -d <alias_name>\n");
+        return;
+      }
+
+      delete_document(argv[2]);
       break;
     }
 
@@ -346,4 +357,59 @@ static void list_documents(const char* filter_type) {
 
   free(line);
   fclose(fp);
+}
+
+static void delete_document(const char* alias_to_delete) {
+  const char* registry_path = get_registry_path();
+  
+  int backup_path_size = strlen(registry_path) + strlen(".backup") + 1; // extra 1 for '\0'
+  char backup_path[backup_path_size];
+
+  snprintf(backup_path, backup_path_size, "%s.backup", registry_path);
+
+  if (rename(registry_path, backup_path) != 0) {
+    fprintf(stderr, "Unable to create a backup file.\n");
+    return;
+  }
+
+  FILE* backup_file_ptr = fopen(backup_path, "r");
+  if (!backup_file_ptr) {
+    rename(backup_path, registry_path);
+    fprintf(stderr, "Unable to open backup file.\n");
+    return;
+  }
+
+  FILE* new_registry_ptr = fopen(registry_path, "w");
+  if(!new_registry_ptr) {
+    rename(backup_path, registry_path);
+    fprintf(stderr, "Unable to open new registry file.\n");
+    return;
+  }
+
+  char* line = NULL;
+  size_t line_limit = 0;
+
+  int deleted = 0;
+  while(getline(&line, &line_limit, backup_file_ptr) != -1) {
+    char type[MAX_LEN];
+    char alias[MAX_LEN];
+    char location[MAX_LEN];
+
+    parse_registry_line(line, type, alias, location);
+
+    if (!deleted && strcmp(alias, alias_to_delete) == 0) {
+      deleted = 1;
+      continue;
+    }
+
+    fprintf(new_registry_ptr, "%s", line);
+  }
+
+  free(line);
+  
+  if (deleted) {
+    fprintf(stdout, "Deleted: %s.\n", alias_to_delete);
+  } else {
+    fprintf(stdout, "%s not found.\n", alias_to_delete);
+  }
 }
