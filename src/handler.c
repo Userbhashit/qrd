@@ -152,8 +152,6 @@ static int valid_entries(const char* alias, const char* type, const char* locati
   return 1;
 }
 
-/* Copy characters from src into dest until delimiter or '\0', with bounds checking.
- * Returns 1 on success (delimiter found), 0 on failure. */
 static int copy_field(char* dest, size_t dest_size, const char* src, char delimiter) {
   if (dest_size == 0) {
     return 0;
@@ -166,7 +164,6 @@ static int copy_field(char* dest, size_t dest_size, const char* src, char delimi
   }
 
   if (src[i] != delimiter) {
-    /* Delimiter not found before end-of-string or buffer limit */
     dest[0] = '\0';
     return 0;
   }
@@ -175,20 +172,16 @@ static int copy_field(char* dest, size_t dest_size, const char* src, char delimi
   return 1;
 }
 
-/* Parse a single registry line into type, alias, and location.
- * Returns 1 on success, 0 on parse failure. */
 static int parse_registry_line(char* line, char* type_out, char* alias_out, char* location_out) {
   char* delimiter = ":;";
   if (!strpbrk(line, delimiter)) {
     return 0;
   }
 
-  /* type is everything up to first ':' */
   if (!copy_field(type_out, MAX_LEN, line, ':')) {
     return 0;
   }
 
-  /* alias is between first and second ':' */
   char* p = strchr(line, ':');
   if (!p) return 0;
   ++p;
@@ -196,7 +189,6 @@ static int parse_registry_line(char* line, char* type_out, char* alias_out, char
     return 0;
   }
 
-  /* location is between second ':' and ';' */
   p = strchr(p, ':');
   if (!p) return 0;
   ++p;
@@ -225,7 +217,6 @@ static int get_file_location(char* file_location_out, const char* target_alias) 
     }
 
     if (strcmp(alias, target_alias) == 0) {
-      /* Copy full location out and return */
       strncpy(file_location_out, location, PATH_MAX - 1);
       file_location_out[PATH_MAX - 1] = '\0';
 
@@ -242,12 +233,6 @@ static int get_file_location(char* file_location_out, const char* target_alias) 
   return 0;
 }
 
-typedef struct {
-  char type[MAX_LEN];
-  char alias[MAX_LEN];
-  char location[PATH_MAX];
-} RegistryEntry;
-
 static void list_documents(const char* filter_type) {
   const char* registry_path = get_registry_path();
   FILE* fp = fopen(registry_path, "r");
@@ -256,7 +241,6 @@ static void list_documents(const char* filter_type) {
     return;
   }
 
-  /* Optional type filter, normalized to lowercase */
   char normalized_type[MAX_LEN];
   const char* type_filter = NULL;
   if (filter_type) {
@@ -273,57 +257,34 @@ static void list_documents(const char* filter_type) {
     type_filter = normalized_type;
   }
 
-  RegistryEntry* entries = NULL;
-  size_t entries_count = 0;
-  size_t entries_capacity = 0;
-
   char* line = NULL;
   size_t line_limit = 0;
-
-  /* Start with header widths so header text always fits */
   size_t max_type_len = strlen("Type");
   size_t max_alias_len = strlen("Alias");
   size_t max_location_len = strlen("Location");
+  size_t entries_count = 0;
 
-  /* Single pass: parse entries, apply optional filter, track widths, and store them */
   while (getline(&line, &line_limit, fp) != -1) {
-    RegistryEntry entry;
+    char type[MAX_LEN];
+    char alias[MAX_LEN];
+    char location[PATH_MAX];
 
-    if (!parse_registry_line(line, entry.type, entry.alias, entry.location)) {
+    if (!parse_registry_line(line, type, alias, location)) {
       continue;
     }
 
-    if (type_filter && strcmp(entry.type, type_filter) != 0) {
+    if (type_filter && strcmp(type, type_filter) != 0) {
       continue;
     }
 
-    size_t type_len = strlen(entry.type);
-    size_t alias_len = strlen(entry.alias);
-    size_t location_len = strlen(entry.location);
-
-    if (type_len > max_type_len) max_type_len = type_len;
-    if (alias_len > max_alias_len) max_alias_len = alias_len;
-    if (location_len > max_location_len) max_location_len = location_len;
-
-    if (entries_count == entries_capacity) {
-      size_t new_capacity = entries_capacity ? entries_capacity * 2 : 8;
-      RegistryEntry* new_entries = realloc(entries, new_capacity * sizeof(RegistryEntry));
-      if (!new_entries) {
-        fprintf(stderr, "qrd: out of memory while listing documents.\n");
-        free(entries);
-        free(line);
-        fclose(fp);
-        return;
-      }
-      entries = new_entries;
-      entries_capacity = new_capacity;
-    }
-
-    entries[entries_count++] = entry;
+    size_t tl = strlen(type);
+    size_t al = strlen(alias);
+    size_t ll = strlen(location);
+    if (tl > max_type_len) max_type_len = tl;
+    if (al > max_alias_len) max_alias_len = al;
+    if (ll > max_location_len) max_location_len = ll;
+    entries_count++;
   }
-
-  free(line);
-  fclose(fp);
 
   if (entries_count == 0) {
     if (type_filter) {
@@ -331,7 +292,8 @@ static void list_documents(const char* filter_type) {
     } else {
       printf("No documents found.\n");
     }
-    free(entries);
+    free(line);
+    fclose(fp);
     return;
   }
 
@@ -339,7 +301,6 @@ static void list_documents(const char* filter_type) {
   int alias_width = (int)max_alias_len;
   int location_width = (int)max_location_len;
 
-  // Print table header 
   printf("+");
   for (int i = 0; i < type_width + 2; ++i) putchar('-');
   printf("+");
@@ -358,8 +319,21 @@ static void list_documents(const char* filter_type) {
   for (int i = 0; i < location_width + 2; ++i) putchar('-');
   printf("+\n");
 
-  for (size_t i = 0; i < entries_count; ++i) {
-    printf("| %-*s | %-*s | %-*s |\n", type_width, entries[i].type, alias_width, entries[i].alias, location_width, entries[i].location);
+  rewind(fp);
+  while (getline(&line, &line_limit, fp) != -1) {
+    char type[MAX_LEN];
+    char alias[MAX_LEN];
+    char location[PATH_MAX];
+
+    if (!parse_registry_line(line, type, alias, location)) {
+      continue;
+    }
+
+    if (type_filter && strcmp(type, type_filter) != 0) {
+      continue;
+    }
+
+    printf("| %-*s | %-*s | %-*s |\n", type_width, type, alias_width, alias, location_width, location);
   }
 
   printf("+");
@@ -370,5 +344,6 @@ static void list_documents(const char* filter_type) {
   for (int i = 0; i < location_width + 2; ++i) putchar('-');
   printf("+\n");
 
-  free(entries);
+  free(line);
+  fclose(fp);
 }
