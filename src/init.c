@@ -1,6 +1,5 @@
 #include "init.h"
 
-#include <_stdio.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
