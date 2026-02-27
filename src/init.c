@@ -1,7 +1,9 @@
 #include "init.h"
 
+#include <_stdio.h>
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -10,37 +12,60 @@
 // Helper function
 static void ensure_config_dir(const char* dir_path);
 
+static char* registry_path;
 const char* get_registry_path(void) {
   return registry_path;
 }
 
-void init_qrd(void) {
-  char config_dir[PATH_MAX];
-  char dir[PATH_MAX];
-  char* home = getenv("HOME");
+void free_registry_path(void) {
+  if(registry_path) {
+    free(registry_path);
+    registry_path = NULL;
+  }
+}
 
+void init_qrd(void) {
+  char* home = getenv("HOME");
   if (!home) {
     fprintf(stderr, "Error: $HOME environment variable not set.\n");
     exit(INIT_FAIL);
   }
 
-  // Ensure ~/.config exists else create it
-  snprintf(config_dir, sizeof(config_dir), "%s/.config", home);
-  ensure_config_dir(config_dir);
+  // Path parts
+  const char* config_suffix = "/.config";
+  const char* qrd_suffix = "/.config/qrd";
+  const char* reg_suffix = "/.config/qrd/registry";
 
-  // Ensure ~/.config/qrd exists else create it
-  snprintf(dir, sizeof(dir), "%s/qrd", config_dir);
-  ensure_config_dir(dir);
+  size_t path_len = strlen(home) + strlen(reg_suffix) + 1;
 
-  snprintf(registry_path, sizeof(registry_path), "%s/registry", dir);
+  // Single local buffer for setup tasks
+  char tmp_path[path_len];
+
+  // Ensure ~/.config exists
+  snprintf(tmp_path, path_len, "%s%s", home, config_suffix);
+  ensure_config_dir(tmp_path);
+
+  // Ensure ~/.config/qrd exists
+  snprintf(tmp_path, path_len, "%s%s", home, qrd_suffix);
+  ensure_config_dir(tmp_path);
+
+  registry_path = malloc(path_len);
+  if (!registry_path) {
+    perror("malloc registry_path");
+    exit(INIT_FAIL);
+  }
+
+  snprintf(registry_path, path_len, "%s%s", home, reg_suffix);
 
   int fd = open(registry_path, O_WRONLY | O_CREAT | O_APPEND, 0600);
   if (fd == -1) {
     perror("qrd: could not create registry file");
+    free(registry_path); 
     exit(INIT_FAIL);
   }
 
   close(fd);
+  atexit(free_registry_path);
 }
 
 static void ensure_config_dir(const char* dir_path) {
