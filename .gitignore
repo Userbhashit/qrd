@@ -2,6 +2,5 @@
 .cache/
 .clang-format
 .idea/
-CMakeLists.txt
 build/
 compile_commands.json
