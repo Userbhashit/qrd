@@ -1,47 +1,45 @@
-#include "cmd.h"
-#include "init.h"
 #include "handler.h"
 
-#include <stdio.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <unistd.h>
+
+#include "cmd.h"
+#include "init.h"
 
 #if defined(__APPLE__)
-  #include <sys/syslimits.h>
-  #define OPEN_CMD "open"
+#define OPEN_CMD "open"
 #elif defined(__linux__)
-  #include <limits.h>
-  #include <linux/limits.h>
-  #define OPEN_CMD "xdg-open"
-#else 
-  #error "This application is only supported for linux and macOS."
+#define OPEN_CMD "xdg-open"
+#else
+#error "This application is only supported for linux and macOS."
 #endif
 
 #define MAX_LEN 128
 
-static int add_document (const char* type, const char* alias, const char* location);
-static void open_document (const char* name);
+static int add_document(const char* type, const char* alias, const char* location);
+static void open_document(const char* name);
 
 // Helper functions
 static int valid_entries(const char* alias, const char* type, const char* location);
-static int get_file_location(char* file_location_buffer, const char* alias);
+static char* get_file_location(const char* alias);
 static void list_documents(const char* filter_type);
 static void delete_document(const char* alias_to_delete);
 
 void handle_command(const Commands command, int argc, const char* argv[]) {
-
   switch (command) {
     case CMD_INVALID: {
-      fprintf(stderr, "Unknow command.\n");
+      fprintf(stderr, "Unknown command.\n");
       break;
     }
 
     case CMD_ADD: {
       if (argc < 5) {
-        fprintf(stderr, "Usage: ./qrd -a <document type> <alias> <file location>.\n");
+        fprintf(stderr,
+                "Usage: ./qrd -a <document type> <alias> <file location>.\n");
         break;
       }
 
@@ -75,7 +73,7 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
     case CMD_REMOVE: {
       if (argc != 3) {
         fprintf(stderr, "Usage: ./qrd -d <alias_name>\n");
-        return;
+        break;
       }
 
       delete_document(argv[2]);
@@ -85,10 +83,9 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
     default:
       fprintf(stderr, "Invalid command.\n");
   }
-
 }
 
-static int add_document (const char* type, const char* alias, const char* location) {
+static int add_document(const char* type, const char* alias, const char* location) {
   const char* registry = get_registry_path();
 
   if (!valid_entries(alias, registry, location)) {
@@ -105,7 +102,12 @@ static int add_document (const char* type, const char* alias, const char* locati
 
   const unsigned int type_len = strlen(type) + 1;
 
-  char lower_case_type[type_len];
+  char* lower_case_type = malloc(type_len);
+  if (!lower_case_type) {
+    fprintf(stderr, "Memory allocation failed.\n");
+    fclose(fp);
+    return 0;
+  }
   for (unsigned int i = 0; i < type_len; i++) {
     lower_case_type[i] = (char)tolower((unsigned char)type[i]);
   }
@@ -113,37 +115,42 @@ static int add_document (const char* type, const char* alias, const char* locati
 
   fprintf(fp, "%s:%s:%s;\n", lower_case_type, alias, location);
 
+  free(lower_case_type);
   fclose(fp);
   return 1;
 }
 
 static void open_document(const char* alias) {
- 
-  char location_buffer[PATH_MAX];
-  if (!get_file_location(location_buffer, alias)) {
+  char* location_buffer = get_file_location(alias);
+
+  if (location_buffer == NULL) {
     return;
-  } 
+  }
 
-  int status = 0;
   pid_t pid = fork();
-
+  if (pid < 0) {
+    fprintf(stderr, "Failed to fork process.\n");
+    free(location_buffer);
+    return;
+  }
   if (pid == 0) {
     char* exe_command[] = {OPEN_CMD, location_buffer, NULL};
     execvp(OPEN_CMD, exe_command);
+    _exit(1);
   } else {
+    int status = 0;
     wait(&status);
-
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
       fprintf(stderr, "Can't open %s.\n", alias);
-      return;
-    } 
+    } else {
+      fprintf(stdout, "Opened: %s\n", alias);
+    }
   }
 
-  fprintf(stdout, "Opened: %s\n", alias);
+  free(location_buffer);
 }
 
 static int valid_entries(const char* alias, const char* type, const char* location) {
-
   if (strlen(alias) > MAX_LEN) {
     fprintf(stderr, "Alias cannot be more than 128 characters.\n");
     return 0;
@@ -155,8 +162,9 @@ static int valid_entries(const char* alias, const char* type, const char* locati
   }
   const char* illegal = ":;";
 
-  if (strpbrk(alias, illegal) || strpbrk(type, illegal) || strpbrk(location, illegal)) {
-    fprintf(stderr, "qrd error: Input contains forbidden characters (':' or ';')\n");
+  if (strpbrk(alias, illegal) || strpbrk(type, illegal) ||
+      strpbrk(location, illegal)) {
+    fprintf(stderr,  "qrd error: Input contains forbidden characters (':' or ';')\n");
     return 0;
   }
 
@@ -164,84 +172,82 @@ static int valid_entries(const char* alias, const char* type, const char* locati
 }
 
 static int copy_field(char* dest, size_t dest_size, const char* src, char delimiter) {
-  if (dest_size == 0) {
-    return 0;
-  }
-
   size_t i = 0;
-  while (src[i] != '\0' && src[i] != delimiter && i + 1 < dest_size) {
+  while (src[i] != '\0' && src[i] != delimiter && i < dest_size - 1) {
     dest[i] = src[i];
-    ++i;
-  }
-
-  if (src[i] != delimiter) {
-    dest[0] = '\0';
-    return 0;
+    i++;
   }
 
   dest[i] = '\0';
+
+  if (src[i] != delimiter && src[i] != '\0') {
+    return 0;
+  }
+
   return 1;
 }
 
-static int parse_registry_line(char* line, char* type_out, char* alias_out, char* location_out) {
-  char* delimiter = ":;";
-  if (!strpbrk(line, delimiter)) {
-    return 0;
-  }
+static int parse_registry_line(char* line, char* type_out, char* alias_out, char* location_out, size_t line_size) {
+  char* p = line;
 
-  if (!copy_field(type_out, MAX_LEN, line, ':')) {
-    return 0;
-  }
-
-  char* p = strchr(line, ':');
-  if (!p) return 0;
-  ++p;
-  if (!copy_field(alias_out, MAX_LEN, p, ':')) {
-    return 0;
-  }
-
+  if (!copy_field(type_out, MAX_LEN, p, ':')) return 0;
   p = strchr(p, ':');
   if (!p) return 0;
-  ++p;
-  if (!copy_field(location_out, PATH_MAX, p, ';')) {
-    return 0;
-  }
+  p++;
 
-  return 1;
+  if (!copy_field(alias_out, MAX_LEN, p, ':')) return 0;
+  p = strchr(p, ':');
+  if (!p) return 0;
+  p++;
+
+  size_t i = 0;
+  while (p[i] != '\0' && p[i] != ';' && p[i] != '\n' && i < line_size - 1) {
+    location_out[i] = p[i];
+    i++;
+  }
+  location_out[i] = '\0';
+
+  return (i > 0);
 }
 
-static int get_file_location(char* file_location_out, const char* target_alias) {
+static char* get_file_location(const char* target_alias) {
   const char* registry_path = get_registry_path();
   FILE* fp = fopen(registry_path, "r");
-  if (!fp) return 0;
+  if (!fp) return NULL;
 
   char* line = NULL;
   size_t line_limit = 0;
+  ssize_t line_size;
 
-  while (getline(&line, &line_limit, fp) != -1) {
+  while ((line_size = getline(&line, &line_limit, fp)) != -1) {
     char type[MAX_LEN];
     char alias[MAX_LEN];
-    char location[PATH_MAX];
+    char* location = malloc(line_size + 1);
 
-    if (!parse_registry_line(line, type, alias, location)) {
+    if (!location) {
+      free(line);
+      fclose(fp);
+      fprintf(stderr, "Memory allocation failed.\n");
+      return NULL;
+    }
+
+    if (!parse_registry_line(line, type, alias, location, line_size)) {
+      free(location);
       continue;
     }
 
     if (strcmp(alias, target_alias) == 0) {
-      strncpy(file_location_out, location, PATH_MAX - 1);
-      file_location_out[PATH_MAX - 1] = '\0';
-
       free(line);
       fclose(fp);
-      return 1;
+      return location;
     }
+    free(location);
   }
 
   fprintf(stderr, "No %s found.\n", target_alias);
-
   free(line);
   fclose(fp);
-  return 0;
+  return NULL;
 }
 
 static void list_documents(const char* filter_type) {
@@ -273,18 +279,28 @@ static void list_documents(const char* filter_type) {
   size_t max_type_len = strlen("Type");
   size_t max_alias_len = strlen("Alias");
   size_t max_location_len = strlen("Location");
+  ssize_t line_size;
   size_t entries_count = 0;
 
-  while (getline(&line, &line_limit, fp) != -1) {
+  while ((line_size = getline(&line, &line_limit, fp)) != -1) {
     char type[MAX_LEN];
     char alias[MAX_LEN];
-    char location[PATH_MAX];
+    char* location = malloc(line_size + 1);
 
-    if (!parse_registry_line(line, type, alias, location)) {
+    if (!location) {
+      free(line);
+      fclose(fp);
+      fprintf(stderr, "Memory allocation failed.\n");
+      return;
+    }
+
+    if (!parse_registry_line(line, type, alias, location, line_size)) {
+      free(location);
       continue;
     }
 
     if (type_filter && strcmp(type, type_filter) != 0) {
+      free(location);
       continue;
     }
 
@@ -295,6 +311,7 @@ static void list_documents(const char* filter_type) {
     if (al > max_alias_len) max_alias_len = al;
     if (ll > max_location_len) max_location_len = ll;
     entries_count++;
+    free(location);
   }
 
   if (entries_count == 0) {
@@ -320,7 +337,8 @@ static void list_documents(const char* filter_type) {
   for (int i = 0; i < location_width + 2; ++i) putchar('-');
   printf("+\n");
 
-  printf("| %-*s | %-*s | %-*s |\n", type_width, "Type", alias_width, "Alias", location_width, "Location");
+  printf("| %-*s | %-*s | %-*s |\n", type_width, "Type", alias_width, "Alias",
+         location_width, "Location");
 
   printf("+");
   for (int i = 0; i < type_width + 2; ++i) putchar('-');
@@ -331,20 +349,31 @@ static void list_documents(const char* filter_type) {
   printf("+\n");
 
   rewind(fp);
-  while (getline(&line, &line_limit, fp) != -1) {
+  while ((line_size = getline(&line, &line_limit, fp)) != -1) {
     char type[MAX_LEN];
     char alias[MAX_LEN];
-    char location[PATH_MAX];
+    char* location = malloc(line_size + 1);
 
-    if (!parse_registry_line(line, type, alias, location)) {
+    if (!location) {
+      free(line);
+      fclose(fp);
+      fprintf(stderr, "Memory allocation failed.\n");
+      return;
+    }
+
+    if (!parse_registry_line(line, type, alias, location, line_size)) {
+      free(location);
       continue;
     }
 
     if (type_filter && strcmp(type, type_filter) != 0) {
+      free(location);
       continue;
     }
 
-    printf("| %-*s | %-*s | %-*s |\n", type_width, type, alias_width, alias, location_width, location);
+    printf("| %-*s | %-*s | %-*s |\n", type_width, type, alias_width, alias,
+           location_width, location);
+    free(location);
   }
 
   printf("+");
@@ -361,9 +390,13 @@ static void list_documents(const char* filter_type) {
 
 static void delete_document(const char* alias_to_delete) {
   const char* registry_path = get_registry_path();
-  
-  int backup_path_size = strlen(registry_path) + strlen(".backup") + 1; // extra 1 for '\0'
-  char backup_path[backup_path_size];
+
+  size_t backup_path_size = strlen(registry_path) + strlen(".backup") + 1;
+  char* backup_path = malloc(backup_path_size);
+  if (!backup_path) {
+    fprintf(stderr, "Memory allocation failed.\n");
+    return;
+  }
 
   snprintf(backup_path, backup_path_size, "%s.backup", registry_path);
 
@@ -380,7 +413,7 @@ static void delete_document(const char* alias_to_delete) {
   }
 
   FILE* new_registry_ptr = fopen(registry_path, "w");
-  if(!new_registry_ptr) {
+  if (!new_registry_ptr) {
     rename(backup_path, registry_path);
     fprintf(stderr, "Unable to open new registry file.\n");
     return;
@@ -388,28 +421,44 @@ static void delete_document(const char* alias_to_delete) {
 
   char* line = NULL;
   size_t line_limit = 0;
+  ssize_t line_size;
 
   int deleted = 0;
-  while(getline(&line, &line_limit, backup_file_ptr) != -1) {
+  while ((line_size = getline(&line, &line_limit, backup_file_ptr)) != -1) {
     char type[MAX_LEN];
     char alias[MAX_LEN];
-    char location[MAX_LEN];
+    char* location = malloc(line_size + 1);
 
-    parse_registry_line(line, type, alias, location);
+    if (!location) {
+      free(line);
+      fclose(backup_file_ptr);
+      fclose(new_registry_ptr);
+      rename(backup_path, registry_path);
+      fprintf(stderr, "Memory allocation failed.\n");
+      return;
+    }
+
+    parse_registry_line(line, type, alias, location, line_size);
 
     if (!deleted && strcmp(alias, alias_to_delete) == 0) {
       deleted = 1;
+      free(location);
       continue;
     }
 
     fprintf(new_registry_ptr, "%s", line);
+    free(location);
   }
 
   free(line);
-  
+  fclose(backup_file_ptr);
+  fclose(new_registry_ptr);
+
   if (deleted) {
     fprintf(stdout, "Deleted: %s.\n", alias_to_delete);
   } else {
     fprintf(stdout, "%s not found.\n", alias_to_delete);
   }
+
+  free(backup_path);
 }
