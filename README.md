@@ -2,7 +2,7 @@
 
 A CLI document registry manager that allows users to store, list, open, and remove document references with a configurable viewer command.
 
-> **Note**: This was a learning project. The only AI assistance used was for the `list_documents` function in `src/handler.c`.
+> **Note**: This was a learning project. I utilized an AI agent (Cursor) specifically for the TUI table-rendering logic in list_documents to ensure a consistent visual experience. All core logic including path resolution, memory safety, and configuration handling was manually implemented.
 
 ## Features
 
