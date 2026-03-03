@@ -3,7 +3,10 @@
 
 #define INIT_FAIL 1
 
-void init_qrd(void);
+#include "cmd.h"
+
+void init_qrd(const Commands cmd);
 const char* get_registry_path(void);
+const char* get_viewer_command(void);
 
 #endif

@@ -1,4 +1,3 @@
-#include "handler.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -9,25 +8,19 @@
 
 #include "cmd.h"
 #include "init.h"
-
-#if defined(__APPLE__)
-#define OPEN_CMD "open"
-#elif defined(__linux__)
-#define OPEN_CMD "xdg-open"
-#else
-#error "This application is only supported for linux and macOS."
-#endif
+#include "handler.h"
 
 #define MAX_LEN 128
 
-static int add_document(const char* type, const char* alias, const char* location);
 static void open_document(const char* name);
+static void save_viewer_command(const char* viewer_command);
+static int add_document(const char* type, const char* alias, const char* location);
 
 // Helper functions
-static int valid_entries(const char* alias, const char* type, const char* location);
 static char* get_file_location(const char* alias);
 static void list_documents(const char* filter_type);
 static void delete_document(const char* alias_to_delete);
+static int valid_entries(const char* alias, const char* type, const char* location);
 
 void handle_command(const Commands command, int argc, const char* argv[]) {
   switch (command) {
@@ -80,6 +73,16 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
       break;
     }
 
+    case CMD_SET_COMMAND: {
+      if (argc != 3) {
+        fprintf(stderr, "Usage: ./qrd -s <command_to_open>\n");
+        break;
+      }
+
+      save_viewer_command(argv[2]);
+      break;
+    }
+
     default:
       fprintf(stderr, "Invalid command.\n");
   }
@@ -122,6 +125,7 @@ static int add_document(const char* type, const char* alias, const char* locatio
 
 static void open_document(const char* alias) {
   char* location_buffer = get_file_location(alias);
+  char* viewer_command = (char*)get_viewer_command();
 
   if (location_buffer == NULL) {
     return;
@@ -134,8 +138,8 @@ static void open_document(const char* alias) {
     return;
   }
   if (pid == 0) {
-    char* exe_command[] = {OPEN_CMD, location_buffer, NULL};
-    execvp(OPEN_CMD, exe_command);
+    char* exe_command[] = {viewer_command, location_buffer, NULL};
+    execvp(viewer_command, exe_command);
     _exit(1);
   } else {
     int status = 0;
@@ -461,4 +465,39 @@ static void delete_document(const char* alias_to_delete) {
   }
 
   free(backup_path);
+}
+
+static void save_viewer_command(const char* viewer_command) {
+
+  const char* registry_path = get_registry_path();
+  const char* new_suffix = "/command";
+
+  char* last_slash = strrchr(registry_path, '/');
+  if (!last_slash) 
+    return; 
+
+  size_t prefix_len = last_slash - registry_path; 
+  size_t new_len = prefix_len + strlen(new_suffix) + 1;
+
+  char* viewer_command_file_path = malloc(new_len);
+  if (!viewer_command_file_path) {
+    perror("qrd: memory allocation failed");
+    return;
+  }
+
+  snprintf(viewer_command_file_path, new_len, "%.*s%s", (int)prefix_len, registry_path, new_suffix);
+
+  FILE* fp = fopen(viewer_command_file_path, "w");
+  if (!fp) {
+    fprintf(stderr, "Unable to create command file.\n");
+    free(viewer_command_file_path);
+    return;
+  }
+
+  fprintf(fp, "%s", viewer_command);
+
+  fclose(fp);
+  free(viewer_command_file_path);
+
+  printf("Successfully saved viewer_command.\n");
 }
