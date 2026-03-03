@@ -11,6 +11,7 @@ static struct CommandInfo {
   {'h', CMD_HELP},
   {'o', CMD_OPEN},
   {'d', CMD_REMOVE},
+  {'s', CMD_SET_COMMAND},
 };
 
 static int flags_len = sizeof flags / sizeof flags[0];

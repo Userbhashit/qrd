@@ -8,6 +8,7 @@ typedef enum Commands {
   CMD_LIST,
   CMD_REMOVE,
   CMD_INVALID,
+  CMD_SET_COMMAND,
 } Commands;
 
 Commands get_command(int argc, const char* argv[]);
