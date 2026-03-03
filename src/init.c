@@ -30,29 +30,22 @@ void init_qrd(void) {
     exit(INIT_FAIL);
   }
 
-  // Path parts
-  const char* config_suffix = "/.config";
-  const char* qrd_suffix = "/.config/qrd";
   const char* reg_suffix = "/.config/qrd/registry";
-
-  size_t path_len = strlen(home) + strlen(reg_suffix) + 1;
-
-  // Single local buffer for setup tasks
-  char tmp_path[path_len];
-
-  // Ensure ~/.config exists
-  snprintf(tmp_path, path_len, "%s%s", home, config_suffix);
-  ensure_config_dir(tmp_path);
-
-  // Ensure ~/.config/qrd exists
-  snprintf(tmp_path, path_len, "%s%s", home, qrd_suffix);
-  ensure_config_dir(tmp_path);
+  size_t path_len = strlen(home) + strlen(reg_suffix) + 1; // Extra one for '\0'
 
   registry_path = malloc(path_len);
   if (!registry_path) {
     perror("malloc registry_path");
     exit(INIT_FAIL);
-  }
+  }  
+  
+  // Ensure ~/.config exists
+  snprintf(registry_path, path_len, "%s/.config", home);
+  ensure_config_dir(registry_path);
+
+  // Ensure ~/.config/qrd exists
+  snprintf(registry_path, path_len, "%s/.config/qrd", home);
+  ensure_config_dir(registry_path);
 
   snprintf(registry_path, path_len, "%s%s", home, reg_suffix);
 
