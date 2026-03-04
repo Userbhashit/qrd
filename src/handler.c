@@ -10,6 +10,7 @@
 #include "init.h"
 #include "handler.h"
 
+// Max leb for document type and alias
 #define MAX_LEN 128
 
 static void open_document(const char* name);
@@ -191,27 +192,44 @@ static int copy_field(char* dest, size_t dest_size, const char* src, char delimi
   return 1;
 }
 
+/* if a field is not needed we can pass NULL to skip it
+ * i.e. only type is needed we can call function like  parse_registry_line(line, type_buffer, NULL, NULL, line_size);
+ */
 static int parse_registry_line(char* line, char* type_out, char* alias_out, char* location_out, size_t line_size) {
   char* p = line;
 
-  if (!copy_field(type_out, MAX_LEN, p, ':')) return 0;
-  p = strchr(p, ':');
-  if (!p) return 0;
-  p++;
-
-  if (!copy_field(alias_out, MAX_LEN, p, ':')) return 0;
-  p = strchr(p, ':');
-  if (!p) return 0;
-  p++;
-
-  size_t i = 0;
-  while (p[i] != '\0' && p[i] != ';' && p[i] != '\n' && i < line_size - 1) {
-    location_out[i] = p[i];
-    i++;
+  if (type_out) {
+    if (!copy_field(type_out, MAX_LEN, p, ':')) 
+      return 0;
   }
-  location_out[i] = '\0';
 
-  return (i > 0);
+  p = strchr(p, ':');
+  if (!p) 
+    return 0;
+  p++;
+
+  if (alias_out) {
+    if (!copy_field(alias_out, MAX_LEN, p, ':')) 
+      return 0;
+  }
+
+  p = strchr(p, ':');
+  if (!p) 
+    return 0;
+  p++;
+
+  if (location_out) {
+    size_t i = 0;
+    while (p[i] != '\0' && p[i] != ';' && p[i] != '\n' && i < line_size - 1) {
+      location_out[i] = p[i];
+      i++;
+    }
+    location_out[i] = '\0';
+
+    return (i > 0);
+  }
+
+  return 1;
 }
 
 static char* get_file_location(const char* target_alias) {
@@ -429,29 +447,16 @@ static void delete_document(const char* alias_to_delete) {
 
   int deleted = 0;
   while ((line_size = getline(&line, &line_limit, backup_file_ptr)) != -1) {
-    char type[MAX_LEN];
     char alias[MAX_LEN];
-    char* location = malloc(line_size + 1);
 
-    if (!location) {
-      free(line);
-      fclose(backup_file_ptr);
-      fclose(new_registry_ptr);
-      rename(backup_path, registry_path);
-      fprintf(stderr, "Memory allocation failed.\n");
-      return;
-    }
-
-    parse_registry_line(line, type, alias, location, line_size);
+    parse_registry_line(line, NULL, alias, NULL, line_size);
 
     if (!deleted && strcmp(alias, alias_to_delete) == 0) {
       deleted = 1;
-      free(location);
       continue;
     }
 
     fprintf(new_registry_ptr, "%s", line);
-    free(location);
   }
 
   free(line);
