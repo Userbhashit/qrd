@@ -19,7 +19,7 @@ static int flags_len = sizeof flags / sizeof flags[0];
 Commands get_command(int argc, const char* argv[]) {
   
   if (argc < 2 || argv[1][0] != '-' || argv[1][1] == '\0') 
-    return CMD_INVALID;
+    return CMD_HELP;
 
   char input_flag = (char)tolower(argv[1][1]);
 

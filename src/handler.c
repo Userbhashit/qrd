@@ -1,4 +1,3 @@
-
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,6 +80,40 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
       }
 
       save_viewer_command(argv[2]);
+      break;
+    }
+
+    case CMD_HELP: {
+      const char *help_message = 
+      "\n"
+      "Usage: qrd [OPTION]...\n"
+      "\n"
+      "A lightweight CLI tool to manage and open your files quickly using aliases.\n"
+      "\n"
+      "Options:\n"
+      "  \033[1m-s\033[0m <command>             Setup or update the default viewer command.\n"
+      "                           (e.g., qrd -s open, qrd -s xdg-open)\n"
+      "\n"
+      "  \033[1m-a\033[0m <type> <alias> <path> Add a new alias. Supports relative/absolute paths.\n"
+      "                           (e.g., qrd -a pdf resume ./my_resume.pdf)\n"
+      "\n"
+      "  \033[1m-o\033[0m <alias>               Open the file associated with the alias.\n"
+      "\n"
+      "  \033[1m-d\033[0m <alias>               Delete an existing alias.\n"
+      "\n"
+      "  \033[1m-h\033[0m                      Display this help message.\n"
+      "\n"
+      "Quick Start:\n"
+      "  1. Set your viewer:      qrd -s open\n"
+      "  2. Add a file:           qrd -a pdf books ~/Documents/linux.pdf\n"
+      "  3. Open it later:        qrd -o books\n"
+      "\n"
+      "Notes:\n"
+      "  - To change your viewer, simply run 'qrd -s' with the new command.\n"
+      "  - Relative paths are automatically resolved to absolute paths.\n"
+      "\n";
+
+      printf("%s", help_message);
       break;
     }
 
