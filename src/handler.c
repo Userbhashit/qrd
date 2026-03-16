@@ -122,11 +122,21 @@ void handle_command(const Commands command, int argc, const char* argv[]) {
   }
 }
 
-static int add_document(const char* type, const char* alias, const char* location) {
+static int add_document(const char* type, const char* alias, const char* input_file_path) {
   const char* registry = get_registry_path();
 
-  if (!valid_entries(alias, registry, location)) {
+  // we take either the full or relative path as an input and process it using realpath;
+  // This allows user to call qrd from any folder and not type the full path themselves
+  char* full_file_path = realpath(input_file_path, NULL);
+
+  if (!full_file_path) {
+    perror("Error while retrieving full path");
+    return 0;
+  }
+
+  if (!valid_entries(alias, registry, full_file_path)) {
     fprintf(stderr, "Invalid entries.\n");
+    free(full_file_path);
     return 0;
   }
 
@@ -134,6 +144,7 @@ static int add_document(const char* type, const char* alias, const char* locatio
 
   if (!fp) {
     fprintf(stderr, "Unable to open registry path.\n");
+    free(full_file_path);
     return 0;
   }
 
@@ -142,6 +153,7 @@ static int add_document(const char* type, const char* alias, const char* locatio
   char* lower_case_type = malloc(type_len);
   if (!lower_case_type) {
     fprintf(stderr, "Memory allocation failed.\n");
+    free(full_file_path);
     fclose(fp);
     return 0;
   }
@@ -150,9 +162,10 @@ static int add_document(const char* type, const char* alias, const char* locatio
   }
   lower_case_type[type_len - 1] = '\0';
 
-  fprintf(fp, "%s:%s:%s;\n", lower_case_type, alias, location);
+  fprintf(fp, "%s:%s:%s;\n", lower_case_type, alias, full_file_path);
 
   free(lower_case_type);
+  free(full_file_path);
   fclose(fp);
   return 1;
 }
