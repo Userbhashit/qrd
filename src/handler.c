@@ -134,7 +134,7 @@ static int add_document(const char* type, const char* alias, const char* input_f
     return 0;
   }
 
-  if (!valid_entries(alias, registry, full_file_path)) {
+  if (!valid_entries(alias, type, full_file_path)) {
     fprintf(stderr, "Invalid entries.\n");
     free(full_file_path);
     return 0;
@@ -213,8 +213,7 @@ static int valid_entries(const char* alias, const char* type, const char* locati
   }
   const char* illegal = ":;";
 
-  if (strpbrk(alias, illegal) || strpbrk(type, illegal) ||
-      strpbrk(location, illegal)) {
+  if (strpbrk(alias, illegal) || strpbrk(type, illegal) || strpbrk(location, illegal)) {
     fprintf(stderr,  "qrd error: Input contains forbidden characters (':' or ';')\n");
     return 0;
   }
